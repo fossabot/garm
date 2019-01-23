@@ -63,13 +63,7 @@ func NewAthenz(cfg config.Athenz, log Logger) (Athenz, error) {
 	}
 	cfg.AuthN.Config = c
 	cfg.AuthZ.Config = c
-	cfg.AuthZ.AthenzX509 = func() (*tls.Config, error) {
-		pool, err := NewX509CertPool(os.Getenv(cfg.AthenzRootCAKey))
-		if err != nil {
-			err = errors.Wrap(err, "authorization x509 certpool error")
-		}
-		return &tls.Config{RootCAs: pool}, err
-	}
+	cfg.AuthZ.AthenzX509 = getAthenzX509Func(cfg)
 
 	return &athenz{
 		authConfig: cfg,
@@ -88,4 +82,15 @@ func (a *athenz) AthenzAuthenticator(w http.ResponseWriter, r *http.Request) err
 func (a *athenz) AthenzAuthorizer(w http.ResponseWriter, r *http.Request) error {
 	a.authz.ServeHTTP(w, r)
 	return nil
+}
+
+// getAthenzX509Func returns a function to initialize Athenz X509 config
+func getAthenzX509Func(cfg config.Athenz) webhook.IdentityAthenzX509 {
+	return func() (*tls.Config, error) {
+		pool, err := NewX509CertPool(os.Getenv(cfg.AthenzRootCAKey))
+		if err != nil {
+			err = errors.Wrap(err, "authorization x509 certpool error")
+		}
+		return &tls.Config{RootCAs: pool}, err
+	}
 }

@@ -24,13 +24,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
 	webhook "github.com/yahoo/k8s-athenz-webhook"
 	"github.com/yahoojapan/garm/config"
-
 	authn "k8s.io/api/authentication/v1beta1"
 	authz "k8s.io/api/authorization/v1beta1"
 )
@@ -443,6 +443,63 @@ func Test_athenz_AthenzAuthorizer(t *testing.T) {
 			got := tt.args.w.(*httptest.ResponseRecorder)
 			if err := tt.checkFunc(got, tt.want); err != nil {
 				t.Error(err)
+			}
+		})
+	}
+}
+
+func Test_getAthenzX509Func(t *testing.T) {
+	type args struct {
+		cfg config.Athenz
+	}
+	type test struct {
+		name       string
+		args       args
+		beforeFunc func() error
+		checkFunc  func(webhook.IdentityAthenzX509) error
+		afterFunc  func()
+	}
+	tests := []test{
+		test{
+			name: "Get cert pool success",
+			args: args{
+				cfg: config.Athenz{
+					AthenzRootCAKey: "rootCAKey",
+				},
+			},
+			beforeFunc: func() error {
+				return os.Setenv("rootCAKey", "")
+			},
+			checkFunc: func(f webhook.IdentityAthenzX509) error {
+				c, err := f()
+				if err == nil {
+					return err
+				}
+				if c == nil {
+					return fmt.Errorf("return config is null")
+				}
+				return nil
+			},
+			afterFunc: func() {
+				os.Unsetenv("rootCAKey")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.beforeFunc != nil {
+				if err := tt.beforeFunc(); err != nil {
+					t.Errorf("getAthenzX509Func() beforeFunc error: %v", err)
+					return
+				}
+			}
+			if tt.afterFunc != nil {
+				defer tt.afterFunc()
+			}
+
+			got := getAthenzX509Func(tt.args.cfg)
+			if err := tt.checkFunc(got); err != nil {
+				t.Errorf("getAthenzX509Func() error: %v", err)
 			}
 		})
 	}

@@ -541,7 +541,7 @@ func Test_server_hcShutdown(t *testing.T) {
 			}
 			e := s.hcShutdown(tt.args.ctx)
 			if err := tt.checkFunc(s, e, tt.want); err != nil {
-				t.Errorf("server.listenAndServe() Error = %v", err)
+				t.Errorf("server.hcShutdown() Error = %v", err)
 			}
 		})
 	}
@@ -624,7 +624,7 @@ func Test_server_apiShutdown(t *testing.T) {
 			}
 			e := s.apiShutdown(tt.args.ctx)
 			if err := tt.checkFunc(s, e, tt.want); err != nil {
-				t.Errorf("server.listenAndServe() Error = %v", err)
+				t.Errorf("server.apiShutdown() Error = %v", err)
 			}
 		})
 	}
@@ -678,7 +678,7 @@ func Test_server_createHealthCheckServiceMux(t *testing.T) {
 
 			got := createHealthCheckServiceMux(tt.args.pattern)
 			if err := tt.checkFunc(got); err != nil {
-				t.Errorf("server.listenAndServeAPI() Error = %v", err)
+				t.Errorf("server.createHealthCheckServiceMux() Error = %v", err)
 			}
 		})
 	}
@@ -816,6 +816,43 @@ func Test_server_listenAndServeAPI(t *testing.T) {
 				afterFunc: func() error {
 					os.Unsetenv(keyKey)
 					os.Unsetenv(certKey)
+					return nil
+				},
+				want: http.ErrServerClosed,
+			}
+		}(),
+		func() test {
+			return test{
+				name: "Test server startup without tls",
+				fields: fields{
+					srv: &http.Server{
+						Handler: func() http.Handler {
+							return nil
+						}(),
+						Addr: fmt.Sprintf(":%d", 9999),
+					},
+					cfg: config.Server{
+						Port: 9999,
+						TLS: config.TLS{
+							Enabled: false,
+						},
+					},
+				},
+				checkFunc: func(s *server, want error) error {
+					// listenAndServeAPI function is blocking, so we need to set timer to shutdown the process
+					go func() {
+						time.Sleep(time.Second * 1)
+						err := s.srv.Shutdown(context.Background())
+						if err != nil {
+							t.Error(err)
+						}
+					}()
+
+					got := s.listenAndServeAPI()
+
+					if got != want {
+						return fmt.Errorf("got:\t%v\nwant:\t%v", got, want)
+					}
 					return nil
 				},
 				want: http.ErrServerClosed,
