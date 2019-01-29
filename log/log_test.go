@@ -18,6 +18,7 @@ package log
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -148,62 +149,124 @@ func Test_logger_Printf(t *testing.T) {
 }
 
 func Test_logger_Println(t *testing.T) {
-	type fieldsArgs struct {
-		prefix string
-		buffer *bytes.Buffer
+	type fields struct {
+		log *glg.Glg
 	}
 	type args struct {
 		args []interface{}
 	}
-	tests := []struct {
-		name       string
-		fieldsArgs fieldsArgs
-		args       args
-		wantW      string
-	}{
-		{
-			name: "log println write test.",
-			fieldsArgs: fieldsArgs{
-				prefix: "prefix-125",
-				buffer: bytes.NewBuffer(nil),
-			},
-			args: args{
-				args: func() []interface{} {
-					return []interface{}{
-						"args-131",
+	type test struct {
+		name         string
+		fields       fields
+		args         args
+		checkFunc    func() error
+		checkRecover func(interface{}) error
+	}
+	tests := []test{
+		func() test {
+			b := bytes.NewBuffer(nil)
+			return test{
+				name: "log println write test.",
+				fields: fields{
+					log: glg.New().
+						SetPrefix("prefix-125").
+						SetLevelWriter(glg.PRINT, b).
+						SetLevelMode(glg.PRINT, glg.WRITER),
+				},
+				args: args{
+					args: func() []interface{} {
+						return []interface{}{
+							"args-131",
+						}
+					}(),
+				},
+				checkFunc: func() error {
+					got := b.String()
+					want := "[prefix-125]:	args-131\n"
+
+					if !strings.HasSuffix(got, want) {
+						return fmt.Errorf("New() = [%v], want [%v]", got, want)
 					}
-				}(),
-			},
-			wantW: "[prefix-125]:	args-131\n",
-		},
-		{
-			name: "log println write test.",
-			fieldsArgs: fieldsArgs{
-				prefix: "prefix-167",
-				buffer: bytes.NewBuffer(nil),
-			},
-			args: args{
-				args: func() []interface{} {
-					return []interface{}{
+					return nil
+				},
+			}
+		}(),
+		func() test {
+			b := bytes.NewBuffer(nil)
+			return test{
+				name: "log println write test.",
+				fields: fields{
+					log: glg.New().
+						SetPrefix("prefix-167").
+						SetLevelWriter(glg.PRINT, b).
+						SetLevelMode(glg.PRINT, glg.WRITER),
+				},
+				args: args{
+					args: func() []interface{} {
+						return []interface{}{
+							"args-173",
+							"args-174",
+						}
+					}(),
+				},
+				checkFunc: func() error {
+					got := b.String()
+					want := "[prefix-167]:	args-173 args-174\n"
+
+					if !strings.HasSuffix(got, want) {
+						return fmt.Errorf("New() = [%v], want [%v]", got, want)
+					}
+					return nil
+				},
+			}
+		}(),
+		func() test {
+			b := &WriterMock{
+				WriteFunc: func(p []byte) (n int, err error) {
+					return 0, fmt.Errorf("Error")
+				},
+			}
+			return test{
+				name: "log println write error.",
+				fields: fields{
+					log: glg.New().
+						SetLevelWriter(glg.PRINT, b).
+						SetLevelMode(glg.PRINT, glg.WRITER),
+				},
+				args: args{
+					args: []interface{}{
 						"args-173",
-						"args-174",
+					},
+				},
+				checkRecover: func(i interface{}) error {
+					want := "Error"
+					if i != want {
+						return fmt.Errorf("logger error, recovered: %v, want: %v", i, want)
 					}
-				}(),
-			},
-			wantW: "[prefix-167]:	args-173 args-174\n",
-		},
+					return nil
+				},
+			}
+		}(),
 	}
 	for _, tt := range tests {
-		l := &logger{
-			log: glg.New().
-				SetPrefix(tt.fieldsArgs.prefix).
-				SetLevelWriter(glg.PRINT, tt.fieldsArgs.buffer).
-				SetLevelMode(glg.PRINT, glg.WRITER),
-		}
-		l.Println(tt.args.args...)
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					if err := tt.checkRecover(r); err != nil {
+						t.Error(err)
+						return
+					}
+				}
+			}()
+			l := &logger{
+				log: tt.fields.log,
+			}
+			glg.ReplaceExitFunc(func(i int) {})
+			l.Println(tt.args.args...)
 
-		if gotW := tt.fieldsArgs.buffer.String(); !strings.HasSuffix(gotW, tt.wantW) {
-			t.Errorf("New() = [%v], want [%v]", gotW, tt.wantW)
-		}
+			if err := tt.checkFunc(); err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
